@@ -1,0 +1,1054 @@
+name: Generate Build and OTA Manifest for Badge
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_outputs:
+        description: "Deploy to OTA host and create a GitHub release (main branch only)"
+        required: false
+        default: false
+        type: boolean
+
+#bump for ci
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_DIR: releases/badge
+  MANIFEST_FILENAME: versions.json
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # Build OTA file bundle and manifest used by firmware and deployment jobs.
+  build-manifest:
+    runs-on: rx13-runner-1 #ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout cactiot-pad submodule source
+        uses: actions/checkout@v4
+        with:
+          repository: cactuscon/cactiot-pad
+          ssh-key: ${{ secrets.CACTIOT_PAD_DEPLOY_KEY }}
+          path: ./badge/src/cactiotpad
+
+      - name: Checkout SaguarOTA submodule source
+        uses: actions/checkout@v4
+        with:
+          repository: cactuscon/SaguarOTA
+          ssh-key: ${{ secrets.SAGUAROTA_DEPLOY_KEY }}
+          path: ./badge/src/saguarota
+
+      - name: Apply production config for main
+        if: github.ref == 'refs/heads/main'
+        env:
+          CACTIOT_URL: ${{ vars.CACTIOT_URL }}
+          CONFIG_PATH: badge/src/config.py
+          SET_AUTO_BATTLE: "false"
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, sys
+
+          config_path = Path(os.environ["CONFIG_PATH"])
+          cactiot_url = os.environ.get("CACTIOT_URL")
+          if not cactiot_url:
+              sys.exit("CACTIOT_URL repo variable is not set")
+
+          text = config_path.read_text()
+
+          # Direct replacement of known dev values
+          text = text.replace('DEVELOPMENT = True', 'DEVELOPMENT = False')
+          text = text.replace('CACTIOT_URL = "http://your-ip-here:8001"', f'CACTIOT_URL = "{cactiot_url}"')
+          text = text.replace('CACTIOT_VERIFY_SSL = False', 'CACTIOT_VERIFY_SSL = True')
+          text = text.replace('LOG_LEVEL = 20', 'LOG_LEVEL = 30')
+
+          if os.environ.get("SET_AUTO_BATTLE", "false").lower() == "true":
+              text = text.replace('AUTO_BATTLE_MODE = False', 'AUTO_BATTLE_MODE = True')
+
+          config_path.write_text(text)
+          print(f"Updated {config_path} for production build")
+
+          # Debug: show relevant lines
+          for i, line in enumerate(text.split('\n')[48:58], start=49):
+              print(f"{i:3}: {line}")
+          PY
+
+      - name: Ensure lsb_release is available
+        run: |
+          set -euo pipefail
+          if command -v lsb_release >/dev/null 2>&1; then
+            echo "lsb_release already installed"
+            exit 0
+          fi
+          if command -v apt-get >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y lsb-release
+            else
+              apt-get update
+              apt-get install -y lsb-release
+            fi
+          else
+            echo "ERROR: lsb_release missing and apt-get unavailable on this runner."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+          cache: 'pip'
+          cache-dependency-path: '**/requirements*.txt'
+
+      - name: Ensure release directories exist
+        run: |
+          mkdir -p ${{ env.APP_DIR }}
+
+      - name: Build release bundle (compiled .mpy)
+        run: |
+          set -euo pipefail
+
+          IS_PUSH_MAIN=0
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            IS_PUSH_MAIN=1
+          fi
+
+          # Rebuild releases/badge from badge/src each run.
+          rm -rf "${APP_DIR:?}"/*
+          mkdir -p "${APP_DIR}"
+
+          # Copy only specific file types using rsync (faster than find+while loop)
+          # Preserve directory structure under releases/badge/
+          rsync -av --prune-empty-dirs \
+            --exclude='*/example/***' \
+            --exclude='*/examples/***' \
+            --exclude='*/tests/***' \
+            --include='*/' \
+            --include='*.py' \
+            --include='*.mpy' \
+            --include='*.raw' \
+            --include='*.rgb565' \
+            --include='*.c' \
+            --exclude='*' \
+            badge/src/ "${APP_DIR}/"
+
+          # Pre-compile .py files to .mpy (except boot.py and main.py which must remain .py)
+
+          if [ "$IS_PUSH_MAIN" -eq 1 ]; then
+            pip install mpy-cross==1.26.1.post2
+            find "${APP_DIR}" -name "*.py" ! -name "boot.py" ! -name "main.py" | while read -r pyfile; do
+              echo "Compiling: $pyfile"
+              mpy-cross -march=xtensawin -O3 "$pyfile" -o "${pyfile%.py}.mpy"
+              rm "$pyfile"
+            done
+          else
+            echo "Skipping .mpy compilation (non-main branch run); leaving .py for dev testing"
+          fi
+
+      - name: Generate OTA manifest
+        run: |
+          python - <<'EOF'
+          import os, subprocess, json
+
+          # Environment variables controlling key paths
+          app_dir = os.environ.get("APP_DIR", "badge")
+          manifest_filename = os.path.join(app_dir, os.environ.get("MANIFEST_FILENAME", "versions.json"))
+
+          # Load previous manifest if it exists
+          prev_manifest = {}
+          if os.path.exists(manifest_filename):
+              with open(manifest_filename, "r") as f:
+                  prev_manifest = json.load(f)
+          prev_files = { entry["path"]: entry for entry in prev_manifest.get("files", []) }
+
+          new_files = []
+          for root, dirs, files in os.walk(app_dir):
+              # Exclude non-deployable subdirectories from submodules.
+              dirs[:] = [d for d in dirs if d not in {"example", "examples", "tests"}]
+              for filename in files:
+                  # include python, raw image, and C files (use a set for clarity)
+                  allowed_exts = {".py", ".mpy", ".raw", ".rgb565", ".c"}
+                  ext = os.path.splitext(filename)[1].lower()
+                  if ext not in allowed_exts:
+                      continue
+                  filepath = os.path.join(root, filename)
+                  # Create a relative path from the app directory
+                  relpath = os.path.relpath(filepath, app_dir)
+                  # Compute MD5 hash using md5sum
+                  try:
+                      md5_output = subprocess.check_output(["md5sum", filepath]).decode().strip()
+                      md5_hash = md5_output.split()[0]
+                  except Exception as e:
+                      md5_hash = ""
+                  
+                  # If file exists in previous manifest with same MD5, reuse its version.
+                  if relpath in prev_files and prev_files[relpath]["md5"] == md5_hash:
+                      version = prev_files[relpath]["version"]
+                  else:
+                      # New or changed file: use last commit timestamp as version.
+                      try:
+                          version = int(subprocess.check_output(["git", "log", "-1", "--format=%ct", filepath]).decode().strip())
+                      except Exception:
+                          version = 0
+                  
+                  new_files.append({
+                      "path": relpath,
+                      "version": version,
+                      "md5": md5_hash
+                  })
+
+          # Global version is the maximum file version, or 0 if no files exist.
+          global_version = max([entry["version"] for entry in new_files]) if new_files else 0
+          manifest = {"version": global_version, "files": new_files}
+
+          with open(manifest_filename, "w") as f:
+              json.dump(manifest, f, indent=2)
+
+          print("Manifest generated:")
+          print(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: Commit release bundle changes
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+          # Stage all changes under releases/badge (including deletions)
+          git add -A "${APP_DIR}"
+
+          if git diff --cached --quiet; then
+            echo "No release bundle changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Update OTA release bundle [skip ci]"
+          git push
+
+      - name: Upload OTA manifest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-manifest
+          path: "${{ env.APP_DIR }}/${{ env.MANIFEST_FILENAME }}"
+
+  # Flash size selection job - determines which firmware sizes to build
+  # NOTE: This separate job is required for dynamic matrix generation.
+  # GitHub Actions matrix values must be known before build-image runs.
+  select-flash-sizes:
+    name: Select flash sizes
+    runs-on: rx13-runner-1
+    outputs:
+      flash_sizes: ${{ steps.set.outputs.flash_sizes }}
+    steps:
+      - id: set
+        name: Select firmware matrix from dispatch context
+        run: |
+          set -euo pipefail
+          # Manual runs on main build both production targets.
+          # Manual runs on non-main branches build only 8MB for faster validation.
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo 'flash_sizes=[8,16]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'flash_sizes=[8]' >> "$GITHUB_OUTPUT"
+          fi
+
+  build-image:
+    name: Build ESP32_GENERIC_S3 (${{ matrix.flash_size }}MB Octal:${{matrix.octal_ram}})
+    # Copyright (c) 2024 - 2025 Kevin G. Schlosser
+    # lvgl_micropython CI for building ESP32_GENERIC_S3 firmwares
+    runs-on: rx13-runner-1 #ubuntu-latest
+    needs: [build-manifest, select-flash-sizes]
+    if: ${{ needs.select-flash-sizes.outputs.flash_sizes != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flash_size: ${{ fromJson(needs.select-flash-sizes.outputs.flash_sizes) }}
+        octal_ram: [true, false]
+    steps:
+
+    # Checkout our main repository first (contains badge/src/)
+    - name: Checkout CactusCon14.dev
+      uses: actions/checkout@v4
+      with:
+        path: main-repo
+
+    - name: Apply production config for main
+      if: github.ref == 'refs/heads/main'
+      env:
+        CACTIOT_URL: ${{ vars.CACTIOT_URL }}
+        CONFIG_PATH: main-repo/badge/src/config.py
+        SET_AUTO_BATTLE: "false"
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        import os, sys
+
+        config_path = Path(os.environ["CONFIG_PATH"])
+        cactiot_url = os.environ.get("CACTIOT_URL")
+        if not cactiot_url:
+            sys.exit("CACTIOT_URL repo variable is not set")
+
+        text = config_path.read_text()
+
+        # Direct replacement of known dev values
+        text = text.replace('DEVELOPMENT = True', 'DEVELOPMENT = False')
+        text = text.replace('CACTIOT_URL = "http://your-ip-here:8001"', f'CACTIOT_URL = "{cactiot_url}"')
+        text = text.replace('CACTIOT_VERIFY_SSL = False', 'CACTIOT_VERIFY_SSL = True')
+        text = text.replace('LOG_LEVEL = 20', 'LOG_LEVEL = 30')
+
+        if os.environ.get("SET_AUTO_BATTLE", "false").lower() == "true":
+            text = text.replace('AUTO_BATTLE_MODE = False', 'AUTO_BATTLE_MODE = True')
+
+        config_path.write_text(text)
+        print(f"Updated {config_path} for production build")
+
+        # Debug: show relevant lines
+        for i, line in enumerate(text.split('\n')[48:58], start=49):
+            print(f"{i:3}: {line}")
+        PY
+
+    - name: Checkout cactiot-pad submodule source
+      uses: actions/checkout@v4
+      with:
+        repository: cactuscon/cactiot-pad
+        ssh-key: ${{ secrets.CACTIOT_PAD_DEPLOY_KEY }}
+        path: main-repo/badge/src/cactiotpad
+
+    - name: Checkout SaguarOTA submodule source
+      uses: actions/checkout@v4
+      with:
+        repository: cactuscon/SaguarOTA
+        ssh-key: ${{ secrets.SAGUAROTA_DEPLOY_KEY }}
+        path: main-repo/badge/src/saguarota
+
+    - name: Clean lvgl_micropython workspace
+      run: |
+        rm -rf lvgl_micropython
+
+    - name: Clean build outputs (matrix isolation)
+      run: |
+        rm -rf fs_image build vfs.bin
+
+    # Checkout lvgl_micropython fork to a separate directory
+    - name: Checkout lvgl_micropython
+      uses: actions/checkout@v4
+      with:
+        repository: cactuscon/lvgl_micropython
+        path: lvgl_micropython
+
+    # MicroPython uses the partition label to decide filesystem type:
+    # - label "vfs" => LittleFS2
+    # - label "ffat" => FAT (with 512-byte blocks)
+    # We generate a FAT image, so we need the partition label to be "ffat".
+    - name: Patch lvgl_micropython partition label
+      run: |
+        grep -n "vfs,data,fat" lvgl_micropython/builder/esp32.py || true
+        sed -i 's/vfs,data,fat/ffat,data,fat/g' lvgl_micropython/builder/esp32.py
+        grep -n "ffat,data,fat" lvgl_micropython/builder/esp32.py
+
+    - name: Set up Python toolchain
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    # Install mpy-cross for pre-compiling Python to .mpy bytecode
+    - name: Install tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mtools dosfstools
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          pip install mpy-cross==1.26.1.post2 esptool
+        else
+          pip install esptool
+        fi
+
+    # Prepare filesystem with pre-compiled .mpy files
+    - name: Prepare filesystem
+      run: |
+        mkdir -p fs_image
+        
+        # Copy only specific file types: .py, .mpy, .raw, .rgb565, .c
+        # Preserve directory structure. Exclude example/examples/tests dirs.
+        cd main-repo/badge/src
+        find . \
+          \( -type d \( -name "example" -o -name "examples" -o -name "tests" \) -prune \) -o \
+          \( -type f \( -name "*.py" -o -name "*.mpy" -o -name "*.raw" -o -name "*.rgb565" -o -name "*.c" \) -print \) | while read file; do
+          dir=$(dirname "$file")
+          mkdir -p "../../../fs_image/$dir"
+          cp "$file" "../../../fs_image/$file"
+        done
+        cd ../../..
+
+        # Pre-compile .py files to .mpy (except boot.py and main.py which must remain .py)
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          find fs_image -name "*.py" ! -name "boot.py" ! -name "main.py" | while read pyfile; do
+            echo "Compiling: $pyfile"
+            mpy-cross -march=xtensawin -O3 "$pyfile" -o "${pyfile%.py}.mpy"
+            rm "$pyfile"
+          done
+        else
+          echo "Skipping .mpy compilation (non-main branch run); leaving .py for dev testing"
+        fi
+        
+        echo "Contents for filesystem image:"
+        find fs_image -type f | head -50
+
+    # Generate OTA manifest from the actual compiled fs_image files
+    # This ensures the manifest hashes match the files in the firmware image
+    - name: Generate OTA manifest from fs_image
+      run: |
+        python3 - <<'EOF'
+        import os, subprocess, json
+
+        fs_dir = "fs_image"
+        manifest_filename = os.environ.get("MANIFEST_FILENAME", "versions.json")
+        output_path = os.path.join(fs_dir, manifest_filename)
+
+        new_files = []
+        for root, dirs, files in os.walk(fs_dir):
+            # Exclude non-deployable subdirectories from submodules.
+            dirs[:] = [d for d in dirs if d not in {"example", "examples", "tests"}]
+            for filename in files:
+                # include python, raw image, and C files
+                allowed_exts = {".py", ".mpy", ".raw", ".rgb565", ".c"}
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in allowed_exts:
+                    continue
+                filepath = os.path.join(root, filename)
+                # Create a relative path from the fs_image directory
+                relpath = os.path.relpath(filepath, fs_dir)
+                # Compute MD5 hash using md5sum
+                try:
+                    md5_output = subprocess.check_output(["md5sum", filepath]).decode().strip()
+                    md5_hash = md5_output.split()[0]
+                except Exception as e:
+                    md5_hash = ""
+                
+                # Use current timestamp as version for all files in this build
+                try:
+                    version = int(subprocess.check_output(["date", "+%s"]).decode().strip())
+                except Exception:
+                    version = 0
+                
+                new_files.append({
+                    "path": relpath,
+                    "version": version,
+                    "md5": md5_hash
+                })
+
+        # Global version is the maximum file version
+        global_version = max([entry["version"] for entry in new_files]) if new_files else 0
+        manifest = {"version": global_version, "files": new_files}
+
+        with open(output_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Generated manifest at {output_path} with {len(new_files)} files")
+        print(f"Global version: {global_version}")
+        EOF
+
+    # Build MicroPython firmware
+    - name: Build firmware
+      run: |
+        cd lvgl_micropython
+        python3 make.py esp32 BOARD=ESP32_GENERIC_S3 ${{ matrix.octal_ram == true && 'BOARD_VARIANT=SPIRAM_OCT' || '' }} --flash-size=${{ matrix.flash_size }} \
+          DISPLAY=rgb_display DISPLAY=ili9341 \
+          INDEV=xpt2046 INDEV=gt911 INDEV=ft6x36 INDEV=ft6x06 INDEV=ft5x16 INDEV=ft5x06
+        cd ..
+
+    # Create FAT image and package with firmware
+    - name: Create VFS image
+      run: |
+        BUILD_DIR=lvgl_micropython/lib/micropython/ports/esp32/build-ESP32_GENERIC_S3
+        FLASH_SIZE_MB=${{ matrix.flash_size }}
+        OCTAL_SUFFIX=${{ matrix.octal_ram == true && '-octal' || '' }}
+
+        # lvgl_micropython already produces a merged, flashable image in lvgl_micropython/build/
+        # Prefer using that as the base to avoid corrupting offsets by re-merging pieces.
+        BASE_IMAGE=$(ls -1 lvgl_micropython/build/lvgl_micropy_*-${FLASH_SIZE_MB}*.bin 2>/dev/null | head -1)
+        if [ -z "$BASE_IMAGE" ]; then
+          echo "ERROR: Could not find base merged image at lvgl_micropython/build/lvgl_micropy_*-${FLASH_SIZE_MB}*.bin"
+          ls -la lvgl_micropython/build || true
+          exit 1
+        fi
+        echo "Using base image: $BASE_IMAGE"
+        
+        # The partition CSV is generated by lvgl_micropython builder in its build directory
+        PARTITION_CSV="lvgl_micropython/build/partitions.csv"
+        if [ ! -f "$PARTITION_CSV" ]; then
+          echo "Partition CSV not found at $PARTITION_CSV, searching..."
+          PARTITION_CSV=$(find lvgl_micropython -name "partitions.csv" -path "*/build/*" | head -1)
+        fi
+        echo "Found partition table: $PARTITION_CSV"
+        cat "$PARTITION_CSV"
+        
+        # Extract filesystem partition offset and size from CSV (ffat,data,fat,OFFSET,SIZE)
+        VFS_LINE=$(grep "^ffat," "$PARTITION_CSV" || grep "ffat,data,fat" "$PARTITION_CSV")
+        echo "VFS partition line: $VFS_LINE"
+        VFS_OFFSET_HEX=$(echo "$VFS_LINE" | cut -d',' -f4 | tr -d ' ')
+        VFS_SIZE_HEX=$(echo "$VFS_LINE" | cut -d',' -f5 | tr -d ' ')
+        VFS_OFFSET=$((VFS_OFFSET_HEX))
+        VFS_SIZE=$((VFS_SIZE_HEX))
+        echo "VFS Offset: $VFS_OFFSET_HEX ($VFS_OFFSET bytes)"
+        echo "VFS Size: $VFS_SIZE_HEX ($VFS_SIZE bytes)"
+        
+        # Create FAT image using mtools (supports long filenames; avoids ESP-IDF fatfsgen 8.3 limitations)
+        VFS_SIZE_KB=$((VFS_SIZE / 1024))
+
+        # Create a *sparse* image file at the full partition size.
+        # This keeps the artifact small on disk and flashes faster with esptool --compress,
+        # while still defining a filesystem sized to the full ffat partition.
+        truncate -s "$VFS_SIZE" vfs.bin
+
+        # Create a FAT filesystem. Some smaller partitions (e.g. ~1.2MB on 4MB/8MB layouts)
+        # are too small for FAT16 with mkfs defaults, so fall back to FAT12/auto.
+        if ! mkfs.vfat -F 16 vfs.bin; then
+          echo "mkfs.vfat -F 16 failed; trying FAT12/auto"
+          mkfs.vfat -F 12 vfs.bin || mkfs.vfat vfs.bin
+        fi
+
+        export MTOOLS_SKIP_CHECK=1
+        echo "drive c: file=\"$(pwd)/vfs.bin\"" > ~/.mtoolsrc
+
+        if [ -d fs_image ] && compgen -G "fs_image/*" > /dev/null; then
+          (cd fs_image && mcopy -s -i ../vfs.bin ./* ::)
+        else
+          echo "fs_image directory is empty; created blank FAT image"
+        fi
+        
+        echo "VFS image created:"
+        ls -la vfs.bin
+        
+        # Create output directory
+        mkdir -p build
+
+        # Copy artifacts needed to flash (include octal suffix in filenames)
+        cp "$BASE_IMAGE" "build/base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin"
+        cp vfs.bin "build/vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin"
+
+        # Record exact flashing offsets.
+        cat > "build/flash_args_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.txt" <<EOF
+        0x0 base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin
+        $VFS_OFFSET_HEX vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin
+        EOF
+
+        # Also produce a single combined factory image (full-flash-span .bin).
+        # Note: this will be ~${FLASH_SIZE_MB}MiB by design because it spans up to the end of the ffat partition.
+        esptool.py --chip esp32s3 merge_bin \
+          -o "build/lvgl_micropy_ESP32_GENERIC_S3-${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin" \
+          --flash_mode dio \
+          --flash_size ${FLASH_SIZE_MB}MB \
+          0x0 "build/base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin" \
+          $VFS_OFFSET_HEX "build/vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}.bin"
+
+        echo "Build complete. Files in build/:"
+        ls -la build/
+
+    # Upload build artifacts for the deploy job
+    - name: Upload firmware artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-build${{ matrix.octal_ram && '-octal' || '-' }}${{ matrix.flash_size }}mb
+        path: build/*
+
+    # Upload OTA files (fs_image with manifest) - only from one matrix build to avoid conflicts
+    # This ensures OTA server has the exact same files as the firmware image
+    - name: Upload OTA files artifact
+      if: matrix.flash_size == 8 && matrix.octal_ram == false
+      uses: actions/upload-artifact@v4
+      with:
+        name: ota-files-from-build
+        path: fs_image/
+
+  build-station-image:
+    name: Build STATION ESP32_GENERIC_S3 (${{ matrix.flash_size }}MB Octal:${{matrix.octal_ram}})
+    # STATION builds contain a minimal codebase for station devices
+    runs-on: rx13-runner-1 #ubuntu-latest
+    needs: [build-manifest, select-flash-sizes]
+    if: ${{ needs.select-flash-sizes.outputs.flash_sizes != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flash_size: ${{ fromJson(needs.select-flash-sizes.outputs.flash_sizes) }}
+        octal_ram: [true, false]
+    steps:
+
+    # Checkout our main repository first (contains badge/src/)
+    - name: Checkout CactusCon14.dev
+      uses: actions/checkout@v4
+      with:
+        path: main-repo
+
+    - name: Apply production config for main (STATION)
+      if: github.ref == 'refs/heads/main'
+      env:
+        CACTIOT_URL: ${{ vars.CACTIOT_URL }}
+        CONFIG_PATH: main-repo/badge/src/config.py
+        SET_AUTO_BATTLE: "true"
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        import os, sys
+
+        config_path = Path(os.environ["CONFIG_PATH"])
+        cactiot_url = os.environ.get("CACTIOT_URL")
+        if not cactiot_url:
+            sys.exit("CACTIOT_URL repo variable is not set")
+
+        text = config_path.read_text()
+
+        # Direct replacement of known dev values
+        text = text.replace('DEVELOPMENT = True', 'DEVELOPMENT = False')
+        text = text.replace('CACTIOT_URL = "http://your-ip-here:8001"', f'CACTIOT_URL = "{cactiot_url}"')
+        text = text.replace('CACTIOT_VERIFY_SSL = False', 'CACTIOT_VERIFY_SSL = True')
+        text = text.replace('LOG_LEVEL = 20', 'LOG_LEVEL = 30')
+
+        if os.environ.get("SET_AUTO_BATTLE", "false").lower() == "true":
+            text = text.replace('AUTO_BATTLE_MODE = False', 'AUTO_BATTLE_MODE = True')
+
+        config_path.write_text(text)
+        print(f"Updated {config_path} for production build (STATION)")
+
+        # Debug: show relevant lines
+        for i, line in enumerate(text.split('\n')[48:58], start=49):
+            print(f"{i:3}: {line}")
+        PY
+
+    - name: Checkout SaguarOTA submodule source
+      uses: actions/checkout@v4
+      with:
+        repository: cactuscon/SaguarOTA
+        ssh-key: ${{ secrets.SAGUAROTA_DEPLOY_KEY }}
+        path: main-repo/badge/src/saguarota
+
+    - name: Clean lvgl_micropython workspace
+      run: |
+        rm -rf lvgl_micropython
+
+    - name: Clean build outputs (matrix isolation)
+      run: |
+        rm -rf fs_image build vfs.bin
+
+    # Checkout lvgl_micropython fork to a separate directory
+    - name: Checkout lvgl_micropython
+      uses: actions/checkout@v4
+      with:
+        repository: cactuscon/lvgl_micropython
+        path: lvgl_micropython
+
+    # MicroPython uses the partition label to decide filesystem type:
+    # - label "vfs" => LittleFS2
+    # - label "ffat" => FAT (with 512-byte blocks)
+    # We generate a FAT image, so we need the partition label to be "ffat".
+    - name: Patch lvgl_micropython partition label
+      run: |
+        grep -n "vfs,data,fat" lvgl_micropython/builder/esp32.py || true
+        sed -i 's/vfs,data,fat/ffat,data,fat/g' lvgl_micropython/builder/esp32.py
+        grep -n "ffat,data,fat" lvgl_micropython/builder/esp32.py
+
+    - name: Set up Python toolchain
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    # Install mpy-cross for pre-compiling Python to .mpy bytecode
+    - name: Install tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mtools dosfstools
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          pip install mpy-cross==1.26.1.post2 esptool
+        else
+          pip install esptool
+        fi
+
+    # Prepare STATION filesystem with minimal codebase
+    # STATION only needs: main.py, boot.py, config.py, cactuscon/*.py, saguarota/*.py, thirdparty/
+    - name: Prepare STATION filesystem
+      run: |
+        mkdir -p fs_image
+        
+        cd main-repo/badge/src
+        
+        # Copy root-level files: main.py, boot.py, config.py
+        for f in main.py boot.py config.py; do
+          if [ -f "$f" ]; then
+            cp "$f" "../../../fs_image/$f"
+          fi
+        done
+        
+        # Copy cactuscon directory (only .py files)
+        if [ -d "cactuscon" ]; then
+          find cactuscon \
+            \( -type d \( -name "example" -o -name "examples" -o -name "tests" \) -prune \) -o \
+            \( -type f -name "*.py" -print \) | while read file; do
+            dir=$(dirname "$file")
+            mkdir -p "../../../fs_image/$dir"
+            cp "$file" "../../../fs_image/$file"
+          done
+        fi
+        
+        # Copy saguarota directory (only .py files)
+        if [ -d "saguarota" ]; then
+          find saguarota \
+            \( -type d \( -name "example" -o -name "examples" -o -name "tests" \) -prune \) -o \
+            \( -type f -name "*.py" -print \) | while read file; do
+            dir=$(dirname "$file")
+            mkdir -p "../../../fs_image/$dir"
+            cp "$file" "../../../fs_image/$file"
+          done
+        fi
+        
+        # Copy entire thirdparty directory (all file types needed)
+        if [ -d "thirdparty" ]; then
+          find thirdparty \
+            \( -type d \( -name "example" -o -name "examples" -o -name "tests" \) -prune \) -o \
+            \( -type f \( -name "*.py" -o -name "*.mpy" -o -name "*.c" \) -print \) | while read file; do
+            dir=$(dirname "$file")
+            mkdir -p "../../../fs_image/$dir"
+            cp "$file" "../../../fs_image/$file"
+          done
+        fi
+        
+        cd ../../..
+
+        # Pre-compile .py files to .mpy (except boot.py, main.py, and config.py which must remain .py)
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          find fs_image -name "*.py" ! -name "boot.py" ! -name "main.py" ! -name "config.py" | while read pyfile; do
+            echo "Compiling: $pyfile"
+            mpy-cross -march=xtensawin -O3 "$pyfile" -o "${pyfile%.py}.mpy"
+            rm "$pyfile"
+          done
+        else
+          echo "Skipping .mpy compilation (non-main branch run); leaving .py for dev testing"
+        fi
+        
+        echo "STATION filesystem contents:"
+        find fs_image -type f | head -50
+
+    # Generate OTA manifest from the actual compiled fs_image files
+    # This ensures the manifest hashes match the files in the firmware image
+    - name: Generate OTA manifest for STATION fs_image
+      run: |
+        python3 - <<'EOF'
+        import os, subprocess, json
+
+        fs_dir = "fs_image"
+        manifest_filename = os.environ.get("MANIFEST_FILENAME", "versions.json")
+        output_path = os.path.join(fs_dir, manifest_filename)
+
+        new_files = []
+        for root, dirs, files in os.walk(fs_dir):
+            # Exclude non-deployable subdirectories from submodules.
+            dirs[:] = [d for d in dirs if d not in {"example", "examples", "tests"}]
+            for filename in files:
+                # include python, raw image, and C files
+                allowed_exts = {".py", ".mpy", ".raw", ".rgb565", ".c"}
+                ext = os.path.splitext(filename)[1].lower()
+                if ext not in allowed_exts:
+                    continue
+                filepath = os.path.join(root, filename)
+                # Create a relative path from the fs_image directory
+                relpath = os.path.relpath(filepath, fs_dir)
+                # Compute MD5 hash using md5sum
+                try:
+                    md5_output = subprocess.check_output(["md5sum", filepath]).decode().strip()
+                    md5_hash = md5_output.split()[0]
+                except Exception as e:
+                    md5_hash = ""
+                
+                # Use current timestamp as version for all files in this build
+                try:
+                    version = int(subprocess.check_output(["date", "+%s"]).decode().strip())
+                except Exception:
+                    version = 0
+                
+                new_files.append({
+                    "path": relpath,
+                    "version": version,
+                    "md5": md5_hash
+                })
+
+        # Global version is the maximum file version
+        global_version = max([entry["version"] for entry in new_files]) if new_files else 0
+        manifest = {"version": global_version, "files": new_files}
+
+        with open(output_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        print(f"Generated STATION manifest at {output_path} with {len(new_files)} files")
+        print(f"Global version: {global_version}")
+        EOF
+
+    # Build MicroPython firmware
+    - name: Build firmware
+      run: |
+        cd lvgl_micropython
+        python3 make.py esp32 BOARD=ESP32_GENERIC_S3 ${{ matrix.octal_ram == true && 'BOARD_VARIANT=SPIRAM_OCT' || '' }} --flash-size=${{ matrix.flash_size }} \
+          DISPLAY=rgb_display DISPLAY=ili9341 \
+          INDEV=xpt2046 INDEV=gt911 INDEV=ft6x36 INDEV=ft6x06 INDEV=ft5x16 INDEV=ft5x06
+        cd ..
+
+    # Create FAT image and package with firmware
+    - name: Create STATION VFS image
+      run: |
+        BUILD_DIR=lvgl_micropython/lib/micropython/ports/esp32/build-ESP32_GENERIC_S3
+        FLASH_SIZE_MB=${{ matrix.flash_size }}
+        OCTAL_SUFFIX=${{ matrix.octal_ram == true && '-octal' || '' }}
+
+        BASE_IMAGE=$(ls -1 lvgl_micropython/build/lvgl_micropy_*-${FLASH_SIZE_MB}*.bin 2>/dev/null | head -1)
+        if [ -z "$BASE_IMAGE" ]; then
+          echo "ERROR: Could not find base merged image at lvgl_micropython/build/lvgl_micropy_*-${FLASH_SIZE_MB}*.bin"
+          ls -la lvgl_micropython/build || true
+          exit 1
+        fi
+        echo "Using base image: $BASE_IMAGE"
+        
+        PARTITION_CSV="lvgl_micropython/build/partitions.csv"
+        if [ ! -f "$PARTITION_CSV" ]; then
+          echo "Partition CSV not found at $PARTITION_CSV, searching..."
+          PARTITION_CSV=$(find lvgl_micropython -name "partitions.csv" -path "*/build/*" | head -1)
+        fi
+        echo "Found partition table: $PARTITION_CSV"
+        cat "$PARTITION_CSV"
+        
+        VFS_LINE=$(grep "^ffat," "$PARTITION_CSV" || grep "ffat,data,fat" "$PARTITION_CSV")
+        echo "VFS partition line: $VFS_LINE"
+        VFS_OFFSET_HEX=$(echo "$VFS_LINE" | cut -d',' -f4 | tr -d ' ')
+        VFS_SIZE_HEX=$(echo "$VFS_LINE" | cut -d',' -f5 | tr -d ' ')
+        VFS_OFFSET=$((VFS_OFFSET_HEX))
+        VFS_SIZE=$((VFS_SIZE_HEX))
+        echo "VFS Offset: $VFS_OFFSET_HEX ($VFS_OFFSET bytes)"
+        echo "VFS Size: $VFS_SIZE_HEX ($VFS_SIZE bytes)"
+        
+        VFS_SIZE_KB=$((VFS_SIZE / 1024))
+
+        truncate -s "$VFS_SIZE" vfs.bin
+
+        if ! mkfs.vfat -F 16 vfs.bin; then
+          echo "mkfs.vfat -F 16 failed; trying FAT12/auto"
+          mkfs.vfat -F 12 vfs.bin || mkfs.vfat vfs.bin
+        fi
+
+        export MTOOLS_SKIP_CHECK=1
+        echo "drive c: file=\"$(pwd)/vfs.bin\"" > ~/.mtoolsrc
+
+        if [ -d fs_image ] && compgen -G "fs_image/*" > /dev/null; then
+          (cd fs_image && mcopy -s -i ../vfs.bin ./* ::)
+        else
+          echo "fs_image directory is empty; created blank FAT image"
+        fi
+        
+        echo "STATION VFS image created:"
+        ls -la vfs.bin
+        
+        mkdir -p build
+
+        cp "$BASE_IMAGE" "build/base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin"
+        cp vfs.bin "build/vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin"
+
+        cat > "build/flash_args_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.txt" <<EOF
+        0x0 base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin
+        $VFS_OFFSET_HEX vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin
+        EOF
+
+        esptool.py --chip esp32s3 merge_bin \
+          -o "build/lvgl_micropy_ESP32_GENERIC_S3-${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin" \
+          --flash_mode dio \
+          --flash_size ${FLASH_SIZE_MB}MB \
+          0x0 "build/base_firmware_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin" \
+          $VFS_OFFSET_HEX "build/vfs_${FLASH_SIZE_MB}MB${OCTAL_SUFFIX}-STATION.bin"
+
+        echo "STATION build complete. Files in build/:"
+        ls -la build/
+
+    # Upload STATION build artifacts for the deploy job
+    - name: Upload STATION firmware artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-build-STATION${{ matrix.octal_ram && '-octal' || '-' }}${{ matrix.flash_size }}mb
+        path: build/*
+
+  # Optional publishing stage (manual dispatch + main only):
+  # copies build artifacts to OTA host.
+  deploy:
+    needs: [build-manifest, build-image, build-station-image]
+    name: Deploy on Self-hosted Runner
+    runs-on: [self-hosted, web]  # Specify that this job runs on a self-hosted mosquitto runner
+
+    # Keep deploy opt-in so manual validation runs do not mutate OTA state.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_outputs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+
+      - name: Download firmware artifacts from build job
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-build-*
+          merge-multiple: true
+          path: firmware
+
+      - name: Download STATION firmware artifacts from build job
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-build-STATION-*
+          merge-multiple: true
+          path: firmware
+
+      - name: Download OTA files from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: ota-files-from-build
+          path: ota-files
+
+      - name: Copy firmware and version to OTA directory
+        run: |
+            set -euo pipefail
+
+            OTA_ROOT=/var/www/ota
+            mkdir -p "$OTA_ROOT"
+
+            LOCAL_MANIFEST_PATH="$OTA_ROOT/${MANIFEST_FILENAME}"
+            # Use OTA files from build job (has correct hashes matching actual compiled files)
+            NEW_MANIFEST_PATH="ota-files/${MANIFEST_FILENAME}"
+
+            if [ ! -f "$NEW_MANIFEST_PATH" ]; then
+              echo "ERROR: New manifest not found at $NEW_MANIFEST_PATH"
+              ls -la ota-files || true
+              exit 1
+            fi
+
+            # If there's no existing manifest on the server, treat it as first deploy.
+            if [ -f "$LOCAL_MANIFEST_PATH" ]; then
+              LAST_VERSION=$(jq -r '.version // -1' "$LOCAL_MANIFEST_PATH" 2>/dev/null || echo -n -1)
+            else
+              LAST_VERSION=-1
+            fi
+
+            NEW_VERSION=$(jq -r '.version // empty' "$NEW_MANIFEST_PATH" 2>/dev/null || true)
+            if [ -z "$NEW_VERSION" ]; then
+              echo "ERROR: Could not read .version from $NEW_MANIFEST_PATH"
+              cat "$NEW_MANIFEST_PATH" || true
+              exit 1
+            fi
+
+            if [ "$LAST_VERSION" = "$NEW_VERSION" ] && [ "$LAST_VERSION" != "-1" ]; then
+              echo "Version $NEW_VERSION already deployed; skipping"
+              exit 0
+            fi
+
+            # Backup current OTA directory (if it has content and we have a prior version).
+            if [ "$LAST_VERSION" != "-1" ] && [ -n "$(ls -A "$OTA_ROOT" 2>/dev/null || true)" ]; then
+              (cd /var/www && zip -r "archive-${LAST_VERSION}.zip" ./ota -x "archive*" >/dev/null)
+            fi
+
+            rm -rf "$OTA_ROOT"/*
+            # Copy compiled .mpy files from build job (same files as in firmware image)
+            cp -a "ota-files/." "$OTA_ROOT/"
+            # Copy firmware binaries
+            cp -a "firmware/." "$OTA_ROOT/"
+
+            if [ ! -f "$LOCAL_MANIFEST_PATH" ]; then
+              echo "ERROR: Deploy did not install $LOCAL_MANIFEST_PATH"
+              ls -la "$OTA_ROOT" || true
+              exit 1
+            fi
+
+            echo "Deployed version $NEW_VERSION to OTA server"
+
+  # Optional release stage (manual dispatch + main only):
+  # publishes build artifacts as a GitHub Release.
+  release:
+    needs: [build-manifest, build-image, build-station-image]
+    name: Create GitHub Release
+    runs-on: rx13-runner-1 #ubuntu-latest
+
+    # Keep release opt-in so manual validation runs do not publish artifacts.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_outputs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-build-*
+          merge-multiple: true
+          path: firmware
+
+      - name: Download STATION firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-build-STATION-*
+          merge-multiple: true
+          path: firmware
+
+      - name: Compute CI release tag
+        id: rel
+        run: |
+          python3 - <<'PY'
+          import os
+          from datetime import datetime, timezone
+
+          out_path = os.environ.get("GITHUB_OUTPUT")
+          if not out_path:
+            raise SystemExit("GITHUB_OUTPUT not set")
+
+          now = datetime.now(timezone.utc)
+          start = datetime(now.year, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+          delta = int((now - start).total_seconds())
+          tag = f"v{now:%y%m}.{now:%d}.{delta}"
+
+          print(f"tag={tag}")
+          with open(out_path, "a", encoding="utf-8") as f:
+            f.write(f"tag={tag}\n")
+          PY
+
+      - name: Create release and upload assets (gh)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "Release tag: $TAG"
+
+          # Ensure gh is available (it is preinstalled on ubuntu-latest)
+          gh --version
+
+          NOTES_FILE=$(mktemp)
+          {
+            echo "Automated release from GitHub Actions."
+            echo
+            echo "- Workflow: $GITHUB_WORKFLOW"
+            echo "- Run: $GITHUB_RUN_ID"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Ref: $GITHUB_REF"
+          } > "$NOTES_FILE"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; uploading assets with --clobber"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$NOTES_FILE" \
+              --target "$GITHUB_SHA"
+          fi
+
+          # Upload all firmware artifacts 
+
+          gh release upload "$TAG" firmware/* --clobber
+

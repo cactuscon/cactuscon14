@@ -1,0 +1,575 @@
+{
+  "version": 1770505147,
+  "files": [
+    {
+      "path": "main.py",
+      "version": 1770505147,
+      "md5": "3ddf23f70a6449d0b08f2edc954774cd"
+    },
+    {
+      "path": "boot.py",
+      "version": 1770505147,
+      "md5": "3d18bccbd6357e26d546c563bf3a8e7c"
+    },
+    {
+      "path": "config.mpy",
+      "version": 1770505147,
+      "md5": "760b9a7e5794edaf3bd82bb94fee26fd"
+    },
+    {
+      "path": "saguarota/__init__.mpy",
+      "version": 1770505147,
+      "md5": "7e4038301a34b5ea899dba1cbd3a5166"
+    },
+    {
+      "path": "saguarota/saguarota/__init__.mpy",
+      "version": 1770505147,
+      "md5": "8891b4bbb788c366dff8a200981f4390"
+    },
+    {
+      "path": "saguarota/saguarota/saguarota.mpy",
+      "version": 1770505147,
+      "md5": "f41e420db5004b9801602045418b1d2e"
+    },
+    {
+      "path": "saguarota/saguarota/py3utils.mpy",
+      "version": 1770505147,
+      "md5": "2095deb2fc2d280f3f378c432dc0b473"
+    },
+    {
+      "path": "thirdparty/uFT6336U.mpy",
+      "version": 1770505147,
+      "md5": "39d178e93ece0c84fb1e95f1718589ff"
+    },
+    {
+      "path": "thirdparty/xglcd_font.mpy",
+      "version": 1770505147,
+      "md5": "97c6d79bd5a1f15d4ede85f16a92bb4b"
+    },
+    {
+      "path": "thirdparty/max1704x.mpy",
+      "version": 1770505147,
+      "md5": "3b64b441bef17fb7195aed0b677197bf"
+    },
+    {
+      "path": "assets/images/map_Z3.rgb565",
+      "version": 1770505147,
+      "md5": "e4a208fe77a11161918e300502dc73d7"
+    },
+    {
+      "path": "assets/images/map_Z1.rgb565",
+      "version": 1770505147,
+      "md5": "1f6ca9477a75dcf7f29b20c7fdb9119c"
+    },
+    {
+      "path": "assets/images/pic_to_rgb565.mpy",
+      "version": 1770505147,
+      "md5": "7d9912a6e71fcd554f0bac6cf74bc900"
+    },
+    {
+      "path": "assets/images/map.rgb565",
+      "version": 1770505147,
+      "md5": "96b4a4d457f7c151fc21496f16403b53"
+    },
+    {
+      "path": "assets/images/map_Z2.rgb565",
+      "version": 1770505147,
+      "md5": "0e4dce9cf666d48c3b4b64f68dee0318"
+    },
+    {
+      "path": "assets/images/banner.rgb565",
+      "version": 1770505147,
+      "md5": "2cbdc88cfc0c556a2c09c9b36d1eed40"
+    },
+    {
+      "path": "assets/images/icons/loss_streak_3.rgb565",
+      "version": 1770505147,
+      "md5": "253f5a416a557fe2f584b76ebc01054b"
+    },
+    {
+      "path": "assets/images/icons/sao_unlock_hackachu.rgb565",
+      "version": 1770505147,
+      "md5": "942d45f14fb63d994b88c08f9ee3bd2d"
+    },
+    {
+      "path": "assets/images/icons/sao_unlock_enigmox.rgb565",
+      "version": 1770505147,
+      "md5": "4b1be898a885555202fdb4ec0805b9e6"
+    },
+    {
+      "path": "assets/images/icons/sweet_tooth.rgb565",
+      "version": 1770505147,
+      "md5": "f794a519c75bf6ec85a80a8bb50bc4b9"
+    },
+    {
+      "path": "assets/images/icons/rage.rgb565",
+      "version": 1770505147,
+      "md5": "36f4e6cf267f8c5f5cfcc5a6ba8b6530"
+    },
+    {
+      "path": "assets/images/icons/temper_max.rgb565",
+      "version": 1770505147,
+      "md5": "5c12ff1d8d2a18862c9073514fc964ec"
+    },
+    {
+      "path": "assets/images/icons/first_battle.rgb565",
+      "version": 1770505147,
+      "md5": "f6edbe90fc306c78e4c278d6dfcd9470"
+    },
+    {
+      "path": "assets/images/icons/win_streak_3.rgb565",
+      "version": 1770505147,
+      "md5": "59e6a3214621bcc8b43e75c6cbd6c224"
+    },
+    {
+      "path": "assets/images/icons/sao_unlock_glyphbat.rgb565",
+      "version": 1770505147,
+      "md5": "c4d140531fe96f49076e7e30432b2b04"
+    },
+    {
+      "path": "assets/images/icons/focus.rgb565",
+      "version": 1770505147,
+      "md5": "3450bf397cdba77c2a12bfc7fe556d66"
+    },
+    {
+      "path": "assets/images/icons/tough_love.rgb565",
+      "version": 1770505147,
+      "md5": "0c66dc44e27db3ab62480237c86c6f59"
+    },
+    {
+      "path": "assets/images/icons/clean_care.rgb565",
+      "version": 1770505147,
+      "md5": "6e45acd2d092b7a75f2a23318947552d"
+    },
+    {
+      "path": "assets/images/icons/work_play.rgb565",
+      "version": 1770505147,
+      "md5": "70175e7b6dedbb233020872aefc80152"
+    },
+    {
+      "path": "assets/images/icons/collector.rgb565",
+      "version": 1770505147,
+      "md5": "b2b20155d33559aec853765aa8ffc55f"
+    },
+    {
+      "path": "assets/images/sprites/cipherkit.rgb565",
+      "version": 1770505147,
+      "md5": "cccad57a6db46f35818a3b4b29309f0f"
+    },
+    {
+      "path": "assets/images/sprites/runewing.rgb565",
+      "version": 1770505147,
+      "md5": "d070e614d9ab7eebfa908a355c6bf9f1"
+    },
+    {
+      "path": "assets/images/sprites/cindervipe.rgb565",
+      "version": 1770505147,
+      "md5": "21d16b720c188f356f43b07276adb91e"
+    },
+    {
+      "path": "assets/images/sprites/hacktarchu.rgb565",
+      "version": 1770505147,
+      "md5": "a30f646510cb922fecd25e41ff8c2666"
+    },
+    {
+      "path": "assets/images/sprites/blipbat.rgb565",
+      "version": 1770505147,
+      "md5": "1cdb3359dcb040987b500a80dddcaa2a"
+    },
+    {
+      "path": "assets/images/sprites/voltqueen.rgb565",
+      "version": 1770505147,
+      "md5": "3538448cfc20ef737ab414ba29dd239b"
+    },
+    {
+      "path": "assets/images/sprites/cinderlet.rgb565",
+      "version": 1770505147,
+      "md5": "cc9c96ee8ba536c798ba8bbb173376b3"
+    },
+    {
+      "path": "assets/images/sprites/hackachimon.rgb565",
+      "version": 1770505147,
+      "md5": "9da963d38127246a9ad84efba4572ce4"
+    },
+    {
+      "path": "assets/images/sprites/voltreign.rgb565",
+      "version": 1770505147,
+      "md5": "4396d2f983763e4d5981bc918ec44183"
+    },
+    {
+      "path": "assets/images/sprites/voltiny.rgb565",
+      "version": 1770505147,
+      "md5": "a2689bb5d1861eb5228c9d9815e4d48f"
+    },
+    {
+      "path": "assets/images/sprites/cryptilox.rgb565",
+      "version": 1770505147,
+      "md5": "494dd94f39ca8d0dde7785051e77ffa9"
+    },
+    {
+      "path": "assets/images/sprites/cinderserp.rgb565",
+      "version": 1770505147,
+      "md5": "1c4ab3a1f6cc6b12479b5037bf5fa786"
+    },
+    {
+      "path": "assets/images/sprites/enigmox.rgb565",
+      "version": 1770505147,
+      "md5": "066d0876c8abe75fa25f7399aae060e8"
+    },
+    {
+      "path": "assets/images/sprites/hackachu.rgb565",
+      "version": 1770505147,
+      "md5": "78148ee7ce388f72deb41cb7268dca9b"
+    },
+    {
+      "path": "assets/images/sprites/glyphbat.rgb565",
+      "version": 1770505147,
+      "md5": "b367612a048f232ee48163f1f34004ba"
+    },
+    {
+      "path": "assets/fonts/ArcadePix9x11.c",
+      "version": 1770505147,
+      "md5": "156846497c09aa9da057ee5bd048d1f4"
+    },
+    {
+      "path": "cactuscon/unlocks.mpy",
+      "version": 1770505147,
+      "md5": "4a18340356615c49a3fbaddda571b2ae"
+    },
+    {
+      "path": "cactuscon/utils.mpy",
+      "version": 1770505147,
+      "md5": "c87b4929336ed94973dd726ac22a684b"
+    },
+    {
+      "path": "cactuscon/__init__.mpy",
+      "version": 1770505147,
+      "md5": "69e2469d82a9918bae3b4c684fa56d4e"
+    },
+    {
+      "path": "cactuscon/schedule_entries.mpy",
+      "version": 1770505147,
+      "md5": "d78989027557c84fefa942e8c760dc10"
+    },
+    {
+      "path": "cactuscon/handle_utils.mpy",
+      "version": 1770505147,
+      "md5": "49ca6b77e1b6b270f53213f46ee49835"
+    },
+    {
+      "path": "cactuscon/application.mpy",
+      "version": 1770505147,
+      "md5": "2fb84e98bfa18b9a65a792d5fef3eed1"
+    },
+    {
+      "path": "cactuscon/registration.mpy",
+      "version": 1770505147,
+      "md5": "be37d063a56d9f8c0a071f17f68b016a"
+    },
+    {
+      "path": "cactuscon/prefs.mpy",
+      "version": 1770505147,
+      "md5": "0e386b2cbc019e094121dd7005a6bf46"
+    },
+    {
+      "path": "cactuscon/game/__init__.mpy",
+      "version": 1770505147,
+      "md5": "dfcbc38ff98cb56e2a5a12d52b59ff0e"
+    },
+    {
+      "path": "cactuscon/game/comms.mpy",
+      "version": 1770505147,
+      "md5": "b9100936052753872a439415ca7a4e89"
+    },
+    {
+      "path": "cactuscon/game/auto_battle.mpy",
+      "version": 1770505147,
+      "md5": "beb0b69cb69b918560b7a099b83a8dae"
+    },
+    {
+      "path": "cactuscon/game/battle_manager.mpy",
+      "version": 1770505147,
+      "md5": "13b714193ed298df1d049add7d986f23"
+    },
+    {
+      "path": "cactuscon/game/engine/battle_rules.mpy",
+      "version": 1770505147,
+      "md5": "231a90a35add7ac458649e0ac3001fe0"
+    },
+    {
+      "path": "cactuscon/game/engine/__init__.mpy",
+      "version": 1770505147,
+      "md5": "3cbfd4cbde145d447a9184ccda60d4ed"
+    },
+    {
+      "path": "cactuscon/game/engine/deterministic_random.mpy",
+      "version": 1770505147,
+      "md5": "a97fc3f0e6b82918cd805cb93bfacd20"
+    },
+    {
+      "path": "cactuscon/game/engine/characters.mpy",
+      "version": 1770505147,
+      "md5": "ba977ea9cff39e7a708126660cc7b712"
+    },
+    {
+      "path": "cactuscon/game/engine/stations.mpy",
+      "version": 1770505147,
+      "md5": "1e92bdb7ceb9dadf112a60cbd1f968e2"
+    },
+    {
+      "path": "cactuscon/game/engine/status_effects.mpy",
+      "version": 1770505147,
+      "md5": "b16e593e03ea1ee25261dd08c9e9ad3e"
+    },
+    {
+      "path": "cactuscon/game/engine/consensus.mpy",
+      "version": 1770505147,
+      "md5": "a0733c25e6247e7f80acc0aecae9bfb2"
+    },
+    {
+      "path": "cactuscon/game/engine/moves.mpy",
+      "version": 1770505147,
+      "md5": "6d0c777e0876625f466f6e011edbd898"
+    },
+    {
+      "path": "cactuscon/game/engine/achievements.mpy",
+      "version": 1770505147,
+      "md5": "ab792211cab9c3ce51489cf7b6b1bce4"
+    },
+    {
+      "path": "cactuscon/ui/graphics.mpy",
+      "version": 1770505147,
+      "md5": "f8ac2ca034a8a986c670b83b503adfc2"
+    },
+    {
+      "path": "cactuscon/ui/__init__.mpy",
+      "version": 1770505147,
+      "md5": "1067156891bea1181a350b6dc2a89ece"
+    },
+    {
+      "path": "cactuscon/ui/image_utils.mpy",
+      "version": 1770505147,
+      "md5": "d2f94c1046e7d09318731df181cf0301"
+    },
+    {
+      "path": "cactuscon/ui/layout_utils.mpy",
+      "version": 1770505147,
+      "md5": "5da61830f136b35ef6f986f10687ca65"
+    },
+    {
+      "path": "cactuscon/ui/sprites.mpy",
+      "version": 1770505147,
+      "md5": "fc948c92cce6d1e06a6c810d0a020e73"
+    },
+    {
+      "path": "cactuscon/ui/wifi_flow/wifi_views.mpy",
+      "version": 1770505147,
+      "md5": "a8962263e8666e039e94d3afd55db2b9"
+    },
+    {
+      "path": "cactuscon/ui/wifi_flow/__init__.mpy",
+      "version": 1770505147,
+      "md5": "d05d5d4e17dd58fa46d1db8a1f4c17cb"
+    },
+    {
+      "path": "cactuscon/ui/wifi_flow/wifi_controller.mpy",
+      "version": 1770505147,
+      "md5": "8b2959d0c056fab4255a6c4eb8f3aa0e"
+    },
+    {
+      "path": "cactuscon/ui/wifi_flow/wifi_debug.mpy",
+      "version": 1770505147,
+      "md5": "1a9bc57b896f32c3e867bce00e3cb61d"
+    },
+    {
+      "path": "cactuscon/ui/wifi_flow/wifi_keyboard.mpy",
+      "version": 1770505147,
+      "md5": "76891d774a6a867f61eb0cb274b358c6"
+    },
+    {
+      "path": "cactuscon/ui/panels/wifi_flow_panel.mpy",
+      "version": 1770505147,
+      "md5": "9ea8de0191101ad072e81f5588707230"
+    },
+    {
+      "path": "cactuscon/ui/panels/extras.mpy",
+      "version": 1770505147,
+      "md5": "8861b765e6f7800e3d6df8c71b44d9d4"
+    },
+    {
+      "path": "cactuscon/ui/panels/battle_screen.mpy",
+      "version": 1770505147,
+      "md5": "ced1fea5bb6ca8cee2e0f481a7022549"
+    },
+    {
+      "path": "cactuscon/ui/panels/main_menu.mpy",
+      "version": 1770505147,
+      "md5": "8888afdfa63375b507ee525bf665b123"
+    },
+    {
+      "path": "cactuscon/ui/panels/evolution_anim.mpy",
+      "version": 1770505147,
+      "md5": "45bbb73308ad794a1d2ab5970a0ea419"
+    },
+    {
+      "path": "cactuscon/ui/panels/battle_result.mpy",
+      "version": 1770505147,
+      "md5": "1cdab1d2adeba5b7df663edac9985db9"
+    },
+    {
+      "path": "cactuscon/ui/panels/character_care.mpy",
+      "version": 1770505147,
+      "md5": "d6feb4ab16d69f74200f435ecd6eea35"
+    },
+    {
+      "path": "cactuscon/ui/panels/cactuscon_info.mpy",
+      "version": 1770505147,
+      "md5": "b699a59388cd7faf40b008e3b2904179"
+    },
+    {
+      "path": "cactuscon/ui/panels/__init__.mpy",
+      "version": 1770505147,
+      "md5": "3274191a20247084abab96d7e42e18d6"
+    },
+    {
+      "path": "cactuscon/ui/panels/character_pack.mpy",
+      "version": 1770505147,
+      "md5": "db70889c84b57a029c5e8fde5afa4f8e"
+    },
+    {
+      "path": "cactuscon/ui/panels/base_panel.mpy",
+      "version": 1770505147,
+      "md5": "33de4cad9ea26835ea0e37562bb9fd37"
+    },
+    {
+      "path": "cactuscon/ui/panels/battle_matchmaking.mpy",
+      "version": 1770505147,
+      "md5": "633e0254168767b0c49797285d74c8ad"
+    },
+    {
+      "path": "cactuscon/ui/panels/settings.mpy",
+      "version": 1770505147,
+      "md5": "032f9f540dd83c1b0d22ed1632d6ab8f"
+    },
+    {
+      "path": "cactuscon/ui/panels/loading.mpy",
+      "version": 1770505147,
+      "md5": "5e278f1b971f19f59d2806fbdd0ef63c"
+    },
+    {
+      "path": "cactuscon/ui/panels/character.mpy",
+      "version": 1770505147,
+      "md5": "12ddf5f546716e23faf9de7b188a04b8"
+    },
+    {
+      "path": "cactuscon/ui/panels/handle_edit.mpy",
+      "version": 1770505147,
+      "md5": "7a87fa6e0152212fde0780d256a5f2c1"
+    },
+    {
+      "path": "cactuscon/ui/panels/registration.mpy",
+      "version": 1770505147,
+      "md5": "4bc0e6ee73ef1db95e7d2666036bac86"
+    },
+    {
+      "path": "cactuscon/ui/panels/character_evo.mpy",
+      "version": 1770505147,
+      "md5": "c9d8e13456d4755553d8486f582f10bf"
+    },
+    {
+      "path": "cactuscon/ui/panels/chat.mpy",
+      "version": 1770505147,
+      "md5": "d80cf1f57383a13d64665cce9eb3bc38"
+    },
+    {
+      "path": "cactuscon/hw/power_meter.mpy",
+      "version": 1770505147,
+      "md5": "a0a1e52d2c874e96f06edfefe7d98857"
+    },
+    {
+      "path": "cactuscon/hw/pixels.mpy",
+      "version": 1770505147,
+      "md5": "e84966c57802fbd209fe8a9a2a6f5237"
+    },
+    {
+      "path": "cactuscon/hw/bluetooth.mpy",
+      "version": 1770505147,
+      "md5": "c120d3ee5a28df5e693fe98b4593cc5d"
+    },
+    {
+      "path": "cactuscon/hw/screen.mpy",
+      "version": 1770505147,
+      "md5": "9cb9cd65be1808bdda3d2f48975e2a57"
+    },
+    {
+      "path": "cactuscon/hw/__init__.mpy",
+      "version": 1770505147,
+      "md5": "19383bc8d1a2569f9cf28843416d50ec"
+    },
+    {
+      "path": "cactuscon/hw/touch_keyboard.mpy",
+      "version": 1770505147,
+      "md5": "e9292fafffde06218f64e91d8433364b"
+    },
+    {
+      "path": "cactuscon/hw/lvgl_keyboard.mpy",
+      "version": 1770505147,
+      "md5": "4ed09ba8269efe98cb8c8ade25215071"
+    },
+    {
+      "path": "cactuscon/hw/wifi.mpy",
+      "version": 1770505147,
+      "md5": "41e5f82ddf9ba4ff4df6e990dcc76f02"
+    },
+    {
+      "path": "cactiotpad/exceptions.mpy",
+      "version": 1770505147,
+      "md5": "01ef59ac6f15e81b77a7acfc40f3142e"
+    },
+    {
+      "path": "cactiotpad/utils.mpy",
+      "version": 1770505147,
+      "md5": "d1df6a486252883ee7ec589f3e3c60db"
+    },
+    {
+      "path": "cactiotpad/__init__.mpy",
+      "version": 1770505147,
+      "md5": "c0e3aa77762aaa62f390eb877fe1716e"
+    },
+    {
+      "path": "cactiotpad/auth.mpy",
+      "version": 1770505147,
+      "md5": "9b2633530b8e2a6b19f6476c4c0eb3eb"
+    },
+    {
+      "path": "cactiotpad/client.mpy",
+      "version": 1770505147,
+      "md5": "ec569eade5d43a169a4abf2bb17fa721"
+    },
+    {
+      "path": "cactiotpad/examples.mpy",
+      "version": 1770505147,
+      "md5": "e2f174a805c99cc413dd9083f3be8f5a"
+    },
+    {
+      "path": "cactiotpad/models.mpy",
+      "version": 1770505147,
+      "md5": "09c59bb1bb23b81eab4bebde2c039432"
+    },
+    {
+      "path": "cactiotpad/storage.mpy",
+      "version": 1770505147,
+      "md5": "80b3167b7605df014ccd40d553c05ff5"
+    },
+    {
+      "path": "cactiotpad/crypto.mpy",
+      "version": 1770505147,
+      "md5": "70bff5bf6a5635c77717d46eb93b03f3"
+    },
+    {
+      "path": "cactiotpad/config.mpy",
+      "version": 1770505147,
+      "md5": "72bc8f7c3702c8d89eb0d5e44f8ca017"
+    }
+  ]
+}

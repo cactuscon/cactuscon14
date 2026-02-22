@@ -1,0 +1,6 @@
+[submodule "badge/src/cactiotpad"]
+	path = badge/src/cactiotpad
+	url = http://github.com/cactuscon/cactiot-client.git
+[submodule "badge/src/saguarota"]
+	path = badge/src/saguarota
+	url = http://github.com/cactuscon/saguarota.git

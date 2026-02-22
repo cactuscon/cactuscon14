@@ -1,0 +1,73 @@
+# This workflow installs Terraform CLI and runs infrastructure checks manually.
+# A manual dispatch always runs `terraform init`, `terraform fmt`, and `terraform plan`.
+# `terraform apply` is opt-in via workflow input and is additionally restricted to the main branch.
+#
+# Documentation for `hashicorp/setup-terraform` is located here: https://github.com/hashicorp/setup-terraform
+#
+# To use this workflow, you will need to complete the following setup steps.
+
+name: 'Terraform'
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_changes:
+        description: "Run terraform apply (main branch only). Leave false for plan-only runs."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  # Plan/apply infrastructure changes in infrastructure/.
+  # This workflow is manual-only so operators can choose when state changes are allowed.
+  terraform:
+    name: 'Terraform'
+    runs-on: rx13-runner-1
+    environment: production
+
+    # Use the Bash shell regardless whether the GitHub Actions runner is ubuntu-latest, macos-latest, or windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_SECRET_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_wrapper: false
+      #   cli_config_credentials_token: \$\{{ secrets.TF_API_TOKEN }}
+
+    # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+    - name: Terraform Init
+      working-directory: ./infrastructure
+      run: terraform init
+
+    # Checks that all Terraform configuration files adhere to a canonical format
+    - name: Terraform Format
+      working-directory: ./infrastructure
+      run: terraform fmt -check
+
+    # Generates an execution plan for Terraform
+    - name: Terraform Plan
+      working-directory: ./infrastructure
+      run: terraform plan -input=false
+
+      # Apply is intentionally gated: manual dispatch + main branch + apply_changes=true.
+      # This keeps default runs safe for reuse as validation-only pipelines.
+    - name: Terraform Apply
+      working-directory: ./infrastructure
+      if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.apply_changes
+      run: terraform apply -auto-approve -input=false

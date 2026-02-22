@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+firmware = "lvgl_micropy_ESP32_GENERIC_S3-8.bin"
+diagram = "diagram.json"
+rfc2217ServerPort = 4000
